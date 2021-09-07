@@ -38,13 +38,13 @@ loadnames: list = DSSCircuit.Loads.AllNames
 new_loadnames: list = []
 balancedLoads: list = []
 for name in loadnames:
-    if 'a' not in name or 'b' not in name or 'c' not in name:
+    if 'a' not in name and 'b' not in name and 'c' not in name:
         new_loadnames.append(name[1:] + ".1")
         new_loadnames.append(name[1:] + ".2")
         new_loadnames.append(name[1:] + ".3")
         balancedLoads.append(loadnames.index(name))
     else:
-        new_loadnames.append((name[1:]).replace(name, 'a', '.1').replace(name, 'b', '.2').replace(name, 'c', '.3'))
+        new_loadnames.append((name[1:]).replace('a', '.1').replace('b', '.2').replace('c', '.3'))
 
 lines = 0
 Ibase = (5 * 10 ^ 3) / (math.sqrt(3) * 4.16)
@@ -58,11 +58,10 @@ atime = 0
 columns = np.size(DSSCircuit.AllBusVmagPu)
 
 v_mag = np.zeros((nt, columns))
-
 v_ang_matrix = np.zeros((nt, columns))
-AllPowers = np.zeros((1, len(new_loadnames) * 2))
+
 powers = np.zeros((nt, len(new_loadnames) * 2))
-for i in range(1, nt):
+for i in range(nt):
     totc = totc + 1
     DSSText.Command = "get hour"
     hour = DSSText.Result
@@ -72,34 +71,51 @@ for i in range(1, nt):
     atime = atime + float(DSSText.Result)
 
     v = DSSCircuit.AllBusVolts
-    new_v = []
+    comp_v = []
+    for r in range(0, len(v)-1, 2):
+        comp_v.append(complex(v[r], v[r+1]))
     ang_new_v = []
-    for i in range(len(v)):
-        new_v.append(complex(v[i]))
-        ang_new_v.append(np.angle(v[i]))
+    for m in range(len(comp_v)):
+        ang_new_v.append(np.angle(comp_v[m]))
 
-    v_mag[i, :] = DSSCircuit.AllBusVmagPU
-    v_ang_matrix[i, :] = ang_new_v
+    for j in range(len(DSSCircuit.AllBusVmagPu)):
+        v_mag[i][j] = DSSCircuit.AllBusVmagPu[j]
+
+    for j in range(len(ang_new_v)):
+        v_ang_matrix[i][j]=ang_new_v[j]
 
     loadCount = 1
-
-    while loadCount != 0:
-        EPowers = DSSObj.ActiveCircuit.ActiveElement.Power
-
+    AllPowers = []  # *(len(new_loadnames) * 2)
+    while loadCount <= len(new_loadnames):
+        EPowers = list(DSSObj.ActiveCircuit.ActiveElement.Powers)
         if loadCount in balancedLoads:
-            AllPowers[loadCount, :] = EPowers
+            for j in range(len(EPowers)):
+                if EPowers[j] != 0:
+                    AllPowers.append(EPowers[j])
+                else:
+                    continue
 
-        if DSSObj.ActiveCircuit.ActiveElement.NumConductors == 2:
-            AllPowers[loadCount, :] = EPowers
+        elif DSSObj.ActiveCircuit.ActiveElement.NumConductors == 2 and loadCount not in balancedLoads:
+            for j in range(len(EPowers)):
+                if EPowers[j] != 0:
+                    AllPowers.append(EPowers[j])
+                else:
+                    continue
 
         elif DSSObj.ActiveCircuit.ActiveElement.NumConductors == 4:
-            AllPowers[loadCount, :] = EPowers[1] + EPowers[3] + EPowers[5], EPowers[2] + EPowers[4] + EPowers[6]
+                AllPowers.append(EPowers[1] + EPowers[3] + EPowers[5])
+                AllPowers.append(EPowers[2] + EPowers[4] + EPowers[6])
+
 
         else:
             print(DSSObj.ActiveCircuit.ActiveElement.NumConductors)
         loadCount = loadCount + 1
 
-    powers[i, :] = AllPowers
+    for l in range(len(AllPowers)):
+        powers[i][l] = AllPowers[l]
+    # powers[i, :] = AllPowers
+    # AllPowers = []
+    ll = 6
 
 # nodes 150-150r-149 are all the source hence have constant voltages. don't include them in the ANN simulations: (9 since each one of them has 3 phases)
 
